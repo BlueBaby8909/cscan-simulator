@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>C-SCAN Scheduler | OS Project</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+
+    <style>
+        :root {
+            --bg-body: #121212;
+            --bg-card: #1E1E1E;
+            --bg-input: #2C2C2C;
+            --text-primary: #E0E0E0;
+            --text-secondary: #A0A0A0;
+            --accent-color: #03DAC6;
+            --accent-hover: #018786;
+            --border-color: #333333;
+            --error-color: #CF6679;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--bg-body);
+            color: var(--text-primary);
+            margin: 0;
+            padding: 40px 20px;
+            display: flex;
+            justify-content: center;
+            min-height: 100vh;
+        }
+
+        .container {
+            background-color: var(--bg-card);
+            width: 100%;
+            max-width: 900px;
+            padding: 40px;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            border: 1px solid var(--border-color);
+        }
+
+        header { text-align: center; margin-bottom: 40px; }
+        h1 { font-weight: 600; font-size: 1.8rem; margin-bottom: 8px; color: var(--text-primary); }
+        .subtitle { color: var(--text-secondary); font-size: 0.95rem; font-weight: 300; }
+
+        .input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 30px; }
+        .full-width { grid-column: span 2; }
+
+        .form-group label { display: block; margin-bottom: 8px; font-size: 0.85rem; color: var(--text-secondary); font-weight: 600; text-transform: uppercase; }
+        input[type="text"], input[type="number"] {
+            width: 100%; background-color: var(--bg-input); border: 1px solid var(--border-color);
+            color: var(--text-primary); padding: 12px 16px; border-radius: 8px; font-size: 1rem;
+            box-sizing: border-box;
+        }
+        input:focus { outline: none; border-color: var(--accent-color); }
+
+        .btn-submit {
+            background-color: var(--accent-color); color: #000; border: none; padding: 14px;
+            width: 100%; border-radius: 8px; font-size: 1rem; font-weight: 600; cursor: pointer;
+            transition: 0.2s;
+        }
+        .btn-submit:hover { background-color: var(--accent-hover); }
+
+        .stats-row { display: flex; gap: 20px; margin-top: 40px; margin-bottom: 30px; }
+        .stat-card { background-color: var(--bg-input); padding: 20px; border-radius: 8px; flex: 1; border: 1px solid var(--border-color); text-align: center; }
+        .stat-value { font-size: 1.5rem; font-weight: 600; color: var(--accent-color); }
+        .stat-label { font-size: 0.85rem; color: var(--text-secondary); }
+
+        .sequence-box {
+            background-color: #1a1a1a; padding: 15px; border-radius: 8px; font-family: monospace;
+            color: var(--accent-color); font-size: 0.9rem; word-wrap: break-word; border: 1px dashed var(--border-color);
+        }
+
+        /* Updated Chart Container to match Input Background */
+        .chart-container {
+            position: relative; height: 500px; width: 100%;
+            background-color: var(--bg-input); /* Matches input fields */
+            border-radius: 12px; padding: 20px; border: 1px solid var(--border-color); box-sizing: border-box;
+        }
+        .error-msg { color: var(--error-color); text-align: center; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <h1>C-SCAN Disk Scheduler</h1>
+        <div class="subtitle">Performance Innovative Task: Client-Server Model</div>
+    </header>
+
+    {% if error %} <div class="error-msg">{{ error }}</div> {% endif %}
+
+    <form method="POST">
+        <div class="input-grid">
+            <div class="form-group full-width">
+                <label>Request Queue</label>
+                <input type="text" name="queue" value="{{ form.queue }}" required>
+            </div>
+            <div class="form-group">
+                <label>Head Start</label>
+                <input type="number" name="head" value="{{ form.head }}" required>
+            </div>
+            <div class="form-group">
+                <label>Disk Size</label>
+                <input type="number" name="size" value="{{ form.size }}" required>
+            </div>
+        </div>
+        <button type="submit" class="btn-submit">Simulate Algorithm</button>
+    </form>
+
+    {% if result %}
+    <div class="stats-row">
+        <div class="stat-card">
+            <div class="stat-value">{{ result.seek_time }}</div>
+            <div class="stat-label">Total Seek Time</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">{{ result.sequence | length }}</div>
+            <div class="stat-label">Total Steps</div>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>Traversal Sequence</label>
+        <div class="sequence-box">{{ result.sequence | join(' → ') }}</div>
+    </div>
+
+    <div style="margin-top: 40px;">
+        <label style="color: var(--text-secondary); font-size: 0.85rem; font-weight: 600; margin-bottom: 10px; display: block;">VISUALIZATION</label>
+        <div class="chart-container">
+            <canvas id="diskGraph"></canvas>
+        </div>
+    </div>
+
+    <script>
+        Chart.register(ChartDataLabels);
+
+        const rawSequence = {{ result.sequence | tojson }};
+        const diskSize = {{ result.disk_size }};
+
+        const scatterData = rawSequence.map((track, index) => ({
+            x: track,
+            y: index
+        }));
+
+        const ctx = document.getElementById('diskGraph').getContext('2d');
+
+        new Chart(ctx, {
+            type: 'scatter',
+            data: {
+                datasets: [{
+                    label: 'Disk Head Path',
+                    data: scatterData,
+                    showLine: true,
+                    // UI MATCHING: Using the Teal accent color for the line
+                    borderColor: '#03DAC6',
+                    borderWidth: 2,
+                    // UI MATCHING: White dots for contrast against the dark grey bg
+                    pointBackgroundColor: '#fff',
+                    pointBorderColor: '#03DAC6', // Teal border on dots
+                    pointBorderWidth: 2,
+                    pointRadius: 5,
+                    tension: 0
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                layout: {
+                    padding: { top: 20, bottom: 20, left: 20, right: 40 }
+                },
+                scales: {
+                    x: {
+                        position: 'top',
+                        min: 0,
+                        max: diskSize,
+                        grid: {
+                            color: '#404040', // Subtle grey grid
+                            borderDash: [5, 5]
+                        },
+                        ticks: {
+                            color: '#E0E0E0', // Matching text color
+                            font: { size: 12, family: 'Inter' }
+                        },
+                        title: { display: false }
+                    },
+                    y: {
+                        reverse: true,
+                        grid: {
+                            color: '#404040',
+                            borderDash: [5, 5]
+                        },
+                        ticks: {
+                            display: false
+                        }
+                    }
+                },
+                plugins: {
+                    legend: { display: false },
+                    tooltip: {
+                        enabled: true,
+                        backgroundColor: '#1E1E1E', // Card color
+                        titleColor: '#03DAC6',      // Accent color
+                        bodyColor: '#E0E0E0',
+                        borderColor: '#333',
+                        borderWidth: 1,
+                        callbacks: {
+                            label: function(context) {
+                                return `Track: ${context.parsed.x}`;
+                            }
+                        }
+                    },
+                    datalabels: {
+                        align: 'right',
+                        anchor: 'center',
+                        color: '#E0E0E0', // Text color matches UI
+                        font: { size: 11, weight: 'bold', family: 'Inter' },
+                        formatter: function(value) {
+                            return value.x;
+                        }
+                    }
+                }
+            }
+        });
+    </script>
+    {% endif %}
+</div>
+
+</body>
+</html>
